@@ -304,7 +304,7 @@ ORDER BY
 -- Computing the average daily bike flux (see 'avg_chg_bicycles_') for each station
 WITH flux_station_day AS (SELECT
     *,
-    num_ends - num_starts AS chg_bicycles
+    COALESCE(num_ends, 0) - COALESCE(num_starts, 0) AS chg_bicycles  -- If NULL replace num_ends or num_starts with a zero
   FROM
     (SELECT
       start_station_name AS station_name,
@@ -382,4 +382,77 @@ ORDER BY
   year_ 
 
 
+-- Checking trips occuring during the transitions from 2021 to 2022 and from 2022 to 2023.
+SELECT
+  *
+FROM
+  `project-5-405413.santander_bikes.hires-clean`
+WHERE
+  EXTRACT(YEAR FROM start_date) != 2022
+  AND EXTRACT(YEAR FROM end_date) = 2022
+ORDER BY
+  end_date DESC
 
+/*
+We can see that some trips extend until the 2022-01-04. Hence, in our analysis, we will only consider the days following this date
+*/
+
+SELECT
+  *
+FROM
+  `project-5-405413.santander_bikes.hires-clean`
+WHERE
+  EXTRACT(YEAR FROM start_date) = 2022
+  AND EXTRACT(YEAR FROM end_date) != 2022
+ORDER BY
+  start_date
+
+/*
+Only one trip occurred between 2022 and 2023. We will proceed with the analysis and ignore this trip as it constitutes only (1 / 231520 =) 4e-4 % of the 2022 trips.
+*/
+
+-- Obtaining the total bike flux for year 2022
+SELECT
+  SUM(chg_bicycles)
+FROM
+  flux_station_day
+WHERE
+  EXTRACT(YEAR FROM day_) = 2022
+  AND day_ > '2022-01-04 00:00:00 UTC'
+
+/*
+We obtain -1, due to the 2022/2023 trip we previously disregarded.
+*/
+
+-- Calculating the average daily bike fluxes (see 'avg_chg_bicycles') for each station in 2022
+SELECT
+  station_name,
+  SUM(chg_bicycles) / (365 - 4) AS avg_chg_bicycles
+FROM
+  (SELECT
+    *
+  FROM
+    flux_station_day
+  WHERE
+    EXTRACT(YEAR FROM day_) = 2022
+    AND day_ > '2022-01-04 00:00:00 UTC')
+GROUP BY
+  station_name
+ORDER BY
+  station_name
+
+
+-- Counting the number of distinct bikes in the 2022 trips
+SELECT
+  COUNT(DISTINCT bike_id) AS num_of_bikes
+FROM
+  `project-5-405413.santander_bikes.hires-clean`
+WHERE
+  EXTRACT(YEAR FROM start_date) = 2022
+  AND
+  (TIMESTAMP_TRUNC(start_date, DAY) > '2022-01-04 00:00:00 UTC'
+  OR TIMESTAMP_TRUNC(end_date, DAY) > '2022-01-04 00:00:00 UTC')
+
+/*
+There are a total of 23427 bikes
+/*
